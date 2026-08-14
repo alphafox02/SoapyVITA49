@@ -1,0 +1,27 @@
+# Build output
+build/
+build-*/
+*.o
+*.a
+*.so
+*.so.*
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+Makefile
+install_manifest.txt
+
+# Editors
+*.swp
+*~
+.vscode/
+.idea/
+compile_commands.json
+
+# Captures and local data
+*.pcap
+*.pcapng
+streams.conf
