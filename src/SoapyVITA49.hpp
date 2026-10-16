@@ -378,6 +378,7 @@ private:
 
     std::unique_ptr<Control::Session> _control;
     bool _controlWarned = false;
+    int _controlTimeoutMs = 500;
 
     mutable std::mutex _mtx;
 

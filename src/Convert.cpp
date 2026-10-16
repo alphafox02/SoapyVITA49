@@ -48,6 +48,8 @@ size_t samplesInPayload(size_t nBytes, VRT::SampleFormat wire)
 {
     if (wire == VRT::FMT_CI12)
         return nBytes / 3;                 /* 24 bits per complex sample */
+    if (wire == VRT::FMT_CI14)
+        return (nBytes / 28) * 8;          /* 8 complex per 28 bytes (7 words), no tail padding */
     size_t bps = VRT::bytesPerSample(wire);
     return bps ? nBytes / bps : 0;
 }
@@ -56,6 +58,8 @@ size_t payloadForSamples(size_t nSamples, VRT::SampleFormat wire)
 {
     if (wire == VRT::FMT_CI12)
         return nSamples * 3;
+    if (wire == VRT::FMT_CI14)
+        return (nSamples / 8) * 28;        /* whole 8-sample groups only */
     return nSamples * VRT::bytesPerSample(wire);
 }
 
@@ -260,6 +264,32 @@ inline void txLoop12(const uint8_t *src, uint8_t *dst, size_t nItems, bool swapI
     }
 }
 
+/* 14-bit link-efficient packing: items back to back, MSB first, item k at bit
+ * k*14 of the big-endian byte stream. Reads only the two or three bytes the
+ * field spans, so a payload sized to its item count is not over-read. */
+inline int16_t read14(const uint8_t *src, size_t k)
+{
+    size_t bit  = k * 14;
+    size_t byte = bit >> 3;
+    unsigned off = (unsigned)(bit & 7);
+    uint32_t w = ((uint32_t)src[byte] << 8) | src[byte + 1];
+    unsigned total = 16;
+    if (off + 14 > 16) { w = (w << 8) | src[byte + 2]; total = 24; }
+    uint32_t v = (w >> (total - off - 14)) & 0x3FFFu;
+    if (v & 0x2000u)
+        v |= 0xFFFFC000u;                  /* sign extend */
+    return (int16_t)(int32_t)v;
+}
+
+template <class Host>
+inline void rxLoop14(const uint8_t *src, uint8_t *dst, size_t nItems, bool swapIq)
+{
+    for (size_t i = 0; i < nItems; i++) {
+        size_t o = swapIq ? (i ^ 1) : i;
+        Host::put(dst + o * Host::itemBytes, (float)read14(src, i) * (1.0f / 8192.0f));
+    }
+}
+
 } /* anonymous namespace */
 
 size_t wireToHost(const uint8_t *src, VRT::SampleFormat wire, bool swap,
@@ -294,6 +324,13 @@ size_t wireToHost(const uint8_t *src, VRT::SampleFormat wire, bool swap,
         case HOST_CF32: rxLoop12<HostCF32>(src, dst, nItems, swapIq); break;
         case HOST_CS16: rxLoop12<HostCS16>(src, dst, nItems, swapIq); break;
         case HOST_CS8:  rxLoop12<HostCS8>(src, dst, nItems, swapIq);  break;
+        }
+        break;
+    case VRT::FMT_CI14:
+        switch (host) {
+        case HOST_CF32: rxLoop14<HostCF32>(src, dst, nItems, swapIq); break;
+        case HOST_CS16: rxLoop14<HostCS16>(src, dst, nItems, swapIq); break;
+        case HOST_CS8:  rxLoop14<HostCS8>(src, dst, nItems, swapIq);  break;
         }
         break;
     default:

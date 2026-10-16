@@ -243,6 +243,11 @@ static void testPayloadFormat()
     CHECK(ci.format == VRT::FMT_CI12);
     CHECK(ci.linkEfficient);
 
+    /* link-efficient 14-bit (28 bits per complex) */
+    CHECK(VRT::parsePayloadFormat((1u << 31) | (1u << 29) | (13u << 6) | 13, 0, &ci));
+    CHECK(ci.format == VRT::FMT_CI14);
+    CHECK(ci.linkEfficient);
+
     /* IEEE-754 single precision */
     CHECK(VRT::parsePayloadFormat((1u << 29) | (14u << 24) | (31u << 6) | 31, 0, &ci));
     CHECK(ci.format == VRT::FMT_CF32);
@@ -548,6 +553,43 @@ static void testCs16PathIsExact()
         CHECK(host[i] == vals[i]);
 }
 
+/* Packed 14-bit is receive-only here (the device never transmits it): decode a
+ * known 28-byte group and confirm every signed sample, plus that a payload that
+ * is not a whole 8-sample group yields no samples. */
+static void testPacked14Decode()
+{
+    printf("packed 14-bit decode\n");
+
+    const int iq[8][2] = {
+        {0, 0}, {1, -1}, {8191, -8192}, {-8192, 8191},
+        {1234, -4321}, {-1, 1}, {4096, -4096}, {13, -14},
+    };
+    uint8_t pay[28];
+    memset(pay, 0, sizeof(pay));
+    for (int k = 0; k < 8; k++) {
+        for (int half = 0; half < 2; half++) {
+            unsigned v = (unsigned)iq[k][half] & 0x3FFFu;
+            size_t base = (size_t)(2 * k + half) * 14;
+            for (int b = 13; b >= 0; b--) {
+                size_t bp = base + (size_t)(13 - b);
+                if ((v >> b) & 1u) pay[bp >> 3] |= (uint8_t)(0x80u >> (bp & 7u));
+            }
+        }
+    }
+
+    CHECK(Convert::samplesInPayload(28, VRT::FMT_CI14) == 8);
+    CHECK(Convert::samplesInPayload(27, VRT::FMT_CI14) == 0);   /* no partial group */
+
+    int16_t out[16];
+    size_t bytes = Convert::wireToHost(pay, VRT::FMT_CI14, false,
+                                       (uint8_t *)out, Convert::HOST_CS16, 8, false);
+    CHECK(bytes == 8 * 4);
+    for (int k = 0; k < 8; k++) {
+        CHECK(out[2 * k]     / 4 == iq[k][0]);   /* CS16 full scale 2^15 vs 2^13 wire */
+        CHECK(out[2 * k + 1] / 4 == iq[k][1]);
+    }
+}
+
 int main()
 {
     printf("SoapyVITA49 packet layer tests\n\n");
@@ -566,6 +608,7 @@ int main()
     testConversionRoundTrip();
     testIqSwap();
     testCs16PathIsExact();
+    testPacked14Decode();
 
     printf("\n%d checks, %d failure(s)\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;

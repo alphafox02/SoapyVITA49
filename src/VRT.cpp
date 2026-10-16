@@ -16,6 +16,7 @@ const char *formatName(SampleFormat f)
     switch (f) {
     case FMT_CI8:  return "ci8";
     case FMT_CI12: return "ci12";
+    case FMT_CI14: return "ci14";
     case FMT_CI16: return "ci16";
     case FMT_CF32: return "cf32";
     default:       return "unknown";
@@ -194,6 +195,9 @@ bool parsePayloadFormat(uint32_t w1, uint32_t w2, ContextInfo *out)
          * a 12-in-16 processing-efficient stream is read as ci16 by the
          * receiver with the low nibble as noise, which is harmless. */
         if (itemBits == 12 && fieldBits == 12) { out->format = FMT_CI12; return true; }
+        /* 14-bit only decodes when packed link-efficiently into 14-bit fields,
+         * 28 bits per complex sample; this matches the openwrt-one-sdr producer. */
+        if (itemBits == 14 && fieldBits == 14) { out->format = FMT_CI14; return true; }
         if (itemBits == 12 && fieldBits == 16) { out->format = FMT_CI16; return true; }
         return false;
     case 14:  /* IEEE-754 single precision */

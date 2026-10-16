@@ -62,6 +62,7 @@ enum SampleFormat {
     FMT_UNKNOWN = 0, /**< Not yet determined, or unsupported. */
     FMT_CI8,         /**< Signed 8-bit. */
     FMT_CI12,        /**< Signed 12-bit, link-efficient packed. */
+    FMT_CI14,        /**< Signed 14-bit, link-efficient packed (28 bits/complex). */
     FMT_CI16,        /**< Signed 16-bit. */
     FMT_CF32,        /**< IEEE-754 single precision. */
 };

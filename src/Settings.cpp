@@ -8,6 +8,7 @@
 #include "SoapyVITA49.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 
@@ -116,9 +117,12 @@ SoapyVITA49::SoapyVITA49(const SoapySDR::Kwargs &args)
                     _control->setActionMode(Control::ACTION_DRY_RUN);
                 _control->setRequestAck(argFlag(args, "ctrl_ack", true));
 
-                int timeout = (int)argNum(args, "ctrl_timeout", 500);
+                double timeout = argNum(args, "ctrl_timeout", 500);
+                if (!std::isfinite(timeout) || timeout < 1 || timeout > 300000)
+                    throw std::invalid_argument("ctrl_timeout must be 1..300000 milliseconds");
+                _controlTimeoutMs = (int)timeout;
                 VRT::ContextInfo cur;
-                if (_control->probe(timeout, &cur)) {
+                if (_control->probe(_controlTimeoutMs, &cur)) {
                     SoapySDR::logf(SOAPY_SDR_INFO,
                         "vita49: VITA 49.2 control available at %s:%u",
                         ctrlAddr.c_str(), ctrlPort);
@@ -408,7 +412,7 @@ bool SoapyVITA49::applyControl(int direction, size_t channel, uint32_t cif0Bit,
     (void)channel;
 
     if (_control && _control->available()) {
-        if (_control->setField(cif0Bit, value, 500))
+        if (_control->setField(cif0Bit, value, _controlTimeoutMs))
             return true;
         SoapySDR::logf(SOAPY_SDR_WARNING, "vita49: %s command rejected: %s",
                        what, _control->lastError().c_str());
