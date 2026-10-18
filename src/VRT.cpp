@@ -350,6 +350,18 @@ bool parseCIF0(const uint8_t *vrt, size_t sizeWords, size_t startWord,
             out->temperature = fixed16((uint16_t)(rd32(f, swap) & 0xFFFF), RADIX_TEMP_C);
             out->haveTemperature = true; any = true;
             break;
+        case CIF0_STATE_EVENT: {
+            /* Enables in bits 31..20 govern the indicators in bits 19..8,
+             * as in the data trailer; only AGC/MGC (enable 28, indicator 16)
+             * is decoded. */
+            uint32_t se = rd32(f, swap);
+            if ((se >> 28) & 1) {
+                out->haveAgcMode = true;
+                out->agcAuto = ((se >> 16) & 1) != 0;
+                any = true;
+            }
+            break;
+        }
         case CIF0_DEVICE_ID:
             /* Word 1 carries the OUI in its low 24 bits, word 2 the device
              * code in its low 16 (section 7.1.5.19). This is one of the two
@@ -544,6 +556,7 @@ void appendCIF0(Builder &b, const ContextInfo &info)
     if (info.haveGain)        cif0 |= CIF0_GAIN;
     if (info.haveOverRange)   cif0 |= CIF0_OVER_RANGE_COUNT;
     if (info.haveSampleRate)  cif0 |= CIF0_SAMPLE_RATE;
+    if (info.haveAgcMode)     cif0 |= CIF0_STATE_EVENT;
     if (info.haveFormat)      cif0 |= CIF0_DATA_FORMAT;
     b.appendWord(cif0);
 
@@ -556,6 +569,8 @@ void appendCIF0(Builder &b, const ContextInfo &info)
         b.appendFixed16Pair(info.gainStage2, info.gainStage1, RADIX_GAIN_DB);
     if (info.haveOverRange)  b.appendWord(info.overRange);
     if (info.haveSampleRate) b.appendFixed64(info.sampleRate, RADIX_SAMP_RATE);
+    if (info.haveAgcMode)    /* State/Event: AGC/MGC enable and indicator only */
+        b.appendWord((1u << 28) | (info.agcAuto ? (1u << 16) : 0u));
 
     if (info.haveFormat) {
         unsigned itemFmt  = 0;    /* signed fixed-point */

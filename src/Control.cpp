@@ -254,6 +254,7 @@ bool Session::setField(uint32_t cif0Bit, double value, int timeoutMs)
     case VRT::CIF0_SAMPLE_RATE: set.haveSampleRate = true; set.sampleRate = value; break;
     case VRT::CIF0_BANDWIDTH:   set.haveBandwidth  = true; set.bandwidth  = value; break;
     case VRT::CIF0_GAIN:        set.haveGain       = true; set.gainStage1 = value; break;
+    case VRT::CIF0_STATE_EVENT: set.haveAgcMode    = true; set.agcAuto    = value != 0.0; break;
     default:
         _lastError = "unsupported control field";
         return false;
@@ -295,6 +296,7 @@ bool Session::query(uint32_t cif0Bits, int timeoutMs, VRT::ContextInfo *out)
     if (cif0Bits & VRT::CIF0_SAMPLE_RATE) want.haveSampleRate = true;
     if (cif0Bits & VRT::CIF0_BANDWIDTH)   want.haveBandwidth  = true;
     if (cif0Bits & VRT::CIF0_GAIN)        want.haveGain       = true;
+    if (cif0Bits & VRT::CIF0_STATE_EVENT) want.haveAgcMode    = true;
 
     uint32_t messageId = _nextMessageId++;
 

@@ -453,6 +453,41 @@ static void testBuilderRoundTrip()
     }
 }
 
+static void testAgcModeRoundTrip()
+{
+    printf("State/Event AGC/MGC round trip\n");
+
+    /* The State/Event word sits between sample rate and data format, so the
+     * fields on both sides must still decode. */
+    for (int mode = 0; mode < 2; mode++) {
+        VRT::ContextInfo out;
+        out.haveSampleRate = true; out.sampleRate = 20000000.0;
+        out.haveGain       = true; out.gainStage1 = 45.0;
+        out.haveAgcMode    = true; out.agcAuto    = mode == 1;
+        out.haveFormat     = true; out.format     = VRT::FMT_CI16;
+        std::vector<uint8_t> pkt = VRT::buildContext(
+            0x00C0FFEE, 1, out, VRT::TSI_NONE, 0, VRT::TSF_NONE, 0, false);
+        VRT::ContextInfo back;
+        CHECK(VRT::parseContext(pkt.data(), pkt.size(), false, &back));
+        CHECK(back.haveAgcMode);
+        CHECK(back.agcAuto == (mode == 1));
+        CHECK_NEAR(back.sampleRate, 20000000.0, 1.0);
+        CHECK_NEAR(back.gainStage1, 45.0, 0.01);
+        CHECK(back.format == VRT::FMT_CI16);
+    }
+
+    /* An indicator whose enable (bit 28) is clear says nothing. */
+    VRT::ContextInfo none;
+    none.haveAgcMode = true; none.agcAuto = true;
+    std::vector<uint8_t> pkt = VRT::buildContext(
+        0x00C0FFEE, 1, none, VRT::TSI_NONE, 0, VRT::TSF_NONE, 0, false);
+    size_t last = pkt.size() - 4;            /* the State/Event word */
+    pkt[last] &= ~0x10;                      /* clear bit 28, big-endian */
+    VRT::ContextInfo back;
+    VRT::parseContext(pkt.data(), pkt.size(), false, &back);
+    CHECK(!back.haveAgcMode);
+}
+
 static void testConversionRoundTrip()
 {
     printf("sample conversion round trip\n");
@@ -605,6 +640,7 @@ int main()
     testContextTimestampMode();
     testDataTrailer();
     testBuilderRoundTrip();
+    testAgcModeRoundTrip();
     testConversionRoundTrip();
     testIqSwap();
     testCs16PathIsExact();

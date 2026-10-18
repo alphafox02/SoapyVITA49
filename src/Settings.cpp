@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
@@ -68,6 +69,16 @@ SoapyVITA49::SoapyVITA49(const SoapySDR::Kwargs &args)
     _rxBufferBlocks   = (size_t)argNum(args, "buffers", 512);
     _socketRcvBuf     = (int)argNum(args, "rcvbuf", 16 * 1024 * 1024);
     _contextPeriodSec = argNum(args, "context_rate", 1.0);
+
+    /* gain_range=min:max[:step], the gain values the source accepts */
+    if (args.count("gain_range")) {
+        double lo = 0, hi = 0, step = 0;
+        int n = sscanf(args.at("gain_range").c_str(), "%lf:%lf:%lf", &lo, &hi, &step);
+        if (n < 2 || !(hi > lo))
+            throw std::invalid_argument("gain_range must be min:max or min:max:step");
+        _gainRange = SoapySDR::Range(lo, hi, n == 3 ? step : 0.0);
+        _haveGainRange = true;
+    }
     _emitTxContext    = argFlag(args, "tx_context", true);
     _allowPortReuse   = argFlag(args, "reuse", false);
 
@@ -131,6 +142,14 @@ SoapyVITA49::SoapyVITA49(const SoapySDR::Kwargs &args)
                     if (cur.haveRfFreq)     _rx[0]->centerFreq = cur.rfFreq;
                     if (cur.haveSampleRate) _rx[0]->sampleRate = cur.sampleRate;
                     if (cur.haveBandwidth)  _rx[0]->bandwidth  = cur.bandwidth;
+                    if (cur.haveGain)       _rx[0]->gain = cur.gainStage1 + cur.gainStage2;
+                    /* AGC/MGC is asked separately: a controllee that does not
+                     * know the State/Event field may reject the query, and
+                     * that must not cost the control path itself. */
+                    VRT::ContextInfo se;
+                    if (_control->query(VRT::CIF0_STATE_EVENT, _controlTimeoutMs, &se) &&
+                        se.haveAgcMode)
+                        _rx[0]->agcMode = se.agcAuto ? 1 : 0;
                 } else if (ctrlMode == "on") {
                     SoapySDR::logf(SOAPY_SDR_ERROR,
                         "vita49: control=on but %s:%u did not acknowledge a "
@@ -446,8 +465,11 @@ void SoapyVITA49::setFrequency(const int direction, const size_t channel,
     if (name != "RF" && !name.empty())
         return;
 
-    applyControl(direction, channel, VRT::CIF0_RF_REF_FREQ, frequency,
-                 "set frequency");
+    /* A frequency the controllee refused is not recorded: the receiver did
+     * not move, and the next context packet would say so anyway. */
+    if (!applyControl(direction, channel, VRT::CIF0_RF_REF_FREQ, frequency,
+                      "set frequency") && controlAvailable())
+        return;
 
     std::lock_guard<std::mutex> lk(_mtx);
     if (direction == SOAPY_SDR_RX && channel < _rx.size())
@@ -591,20 +613,50 @@ SoapySDR::RangeList SoapyVITA49::getBandwidthRange(const int direction,
 /* Gain                                                               */
 /* ------------------------------------------------------------------ */
 
-std::vector<std::string> SoapyVITA49::listGains(const int, const size_t) const
+/*
+ * With a working control path the source can be commanded, so one overall
+ * stage named GAIN is listed (hosts such as gqrx draw a slider only for named
+ * stages) and the AGC/MGC indicator of the State/Event field serves as the
+ * gain mode. Without control there is nothing to adjust and nothing is
+ * listed. The range is the full 16-bit radix-7 span unless gain_range=
+ * narrows it to what the source accepts.
+ */
+std::vector<std::string> SoapyVITA49::listGains(const int direction, const size_t) const
 {
-    /* An unnamed overall gain keeps simple hosts happy; VITA 49 carries two
-     * stages but exposing them separately buys nothing when most sources
-     * populate only stage one. */
+    if (direction == SOAPY_SDR_RX && controlAvailable())
+        return { "GAIN" };
     return std::vector<std::string>();
 }
 
-bool SoapyVITA49::hasGainMode(const int, const size_t) const { return false; }
+bool SoapyVITA49::hasGainMode(const int direction, const size_t) const
+{
+    return direction == SOAPY_SDR_RX && controlAvailable();
+}
+
+void SoapyVITA49::setGainMode(const int direction, const size_t channel,
+                              const bool automatic)
+{
+    if (direction != SOAPY_SDR_RX || channel >= _rx.size())
+        return;
+    if (!applyControl(direction, channel, VRT::CIF0_STATE_EVENT, automatic ? 1.0 : 0.0,
+                      "set gain mode") && controlAvailable())
+        return;
+    _rx[channel]->agcMode = automatic ? 1 : 0;
+}
+
+bool SoapyVITA49::getGainMode(const int direction, const size_t channel) const
+{
+    if (direction == SOAPY_SDR_RX && channel < _rx.size())
+        return _rx[channel]->agcMode.load() == 1;
+    return false;
+}
 
 void SoapyVITA49::setGain(const int direction, const size_t channel,
                           const double value)
 {
-    applyControl(direction, channel, VRT::CIF0_GAIN, value, "set gain");
+    if (!applyControl(direction, channel, VRT::CIF0_GAIN, value, "set gain") &&
+        controlAvailable())
+        return;
 
     std::lock_guard<std::mutex> lk(_mtx);
     if (direction == SOAPY_SDR_RX && channel < _rx.size())
@@ -625,10 +677,33 @@ double SoapyVITA49::getGain(const int direction, const size_t channel) const
 SoapySDR::Range SoapyVITA49::getGainRange(const int direction,
                                           const size_t channel) const
 {
-    if (_control && _control->available())
-        return SoapySDR::Range(-256.0, 255.99);   /* full 16-bit radix-7 span */
+    if (controlAvailable())
+        return _haveGainRange ? _gainRange
+                              : SoapySDR::Range(-256.0, 255.99);   /* full 16-bit radix-7 span */
     double g = getGain(direction, channel);
     return SoapySDR::Range(g, g);
+}
+
+/* The single named stage is the overall gain. */
+void SoapyVITA49::setGain(const int direction, const size_t channel,
+                          const std::string &name, const double value)
+{
+    if (name.empty() || name == "GAIN")
+        setGain(direction, channel, value);
+}
+
+double SoapyVITA49::getGain(const int direction, const size_t channel,
+                            const std::string &name) const
+{
+    return (name.empty() || name == "GAIN") ? getGain(direction, channel) : 0.0;
+}
+
+SoapySDR::Range SoapyVITA49::getGainRange(const int direction, const size_t channel,
+                                          const std::string &name) const
+{
+    if (name.empty() || name == "GAIN")
+        return getGainRange(direction, channel);
+    return SoapySDR::Range(0.0, 0.0);
 }
 
 /* ------------------------------------------------------------------ */

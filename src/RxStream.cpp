@@ -424,6 +424,7 @@ void SoapyVITA49::handleRxPacket(RxEndpoint *ep, const uint8_t *pkt, size_t len)
         }
         if (ci.haveBandwidth) c->bandwidth = ci.bandwidth;
         if (ci.haveGain)      c->gain      = ci.gainStage1 + ci.gainStage2;
+        if (ci.haveAgcMode)   c->agcMode   = ci.agcAuto ? 1 : 0;
         if (ci.haveRefLevel)  c->refLevel  = ci.refLevel;
         if (ci.haveOverRange) c->overRange = ci.overRange;
 

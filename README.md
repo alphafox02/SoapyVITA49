@@ -321,6 +321,14 @@ to the single value the source reports. This is deliberate: a range that claims
 to be adjustable when nothing can be adjusted invites a host to believe a tune
 succeeded.
 
+With control available, the receive side lists one gain stage, `GAIN`, which
+hosts such as gqrx show as a slider; its value goes out as the Gain field
+(stage 1). The State/Event field's AGC/MGC indicator serves as the gain mode
+(`setGainMode`), and context packets that carry it keep `getGainMode` current.
+The default range is the full 16-bit span of the Gain field; `gain_range=`
+narrows it to what the source accepts. A setting the controllee rejects is not
+recorded, so `getFrequency` and `getGain` keep reporting what the source has.
+
 `control=on` makes a missing control path an error rather than a fallback, and
 `control=off` skips the probe. A controllee whose profile differs from the
 specification can be accommodated by replacing the Control and Acknowledge Mode
@@ -430,6 +438,7 @@ upon.
 | `ctrl_cam` | computed | Raw Control and Acknowledge Mode word |
 | `ctrl_dry_run` | `0` | Ask the controllee to validate commands without applying them |
 | `ctrl_ack` | `1` | Wait for an acknowledgement before committing a change |
+| `gain_range` | full Gain span | `min:max[:step]` the source accepts, for the gain slider |
 | `tx_addr`, `tx_port` | — | Transmit destination; required for transmit |
 | `tx_sid` | `0x1` | Transmit stream identifier |
 | `tx_rate`, `tx_freq` | — | Rate to pace at, and frequency to advertise |

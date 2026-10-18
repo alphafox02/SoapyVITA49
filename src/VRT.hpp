@@ -186,6 +186,7 @@ struct ContextInfo {
     bool     haveFormat      = false;
     bool     haveOverRange   = false;
     bool     haveTemperature = false;
+    bool     haveAgcMode     = false; /**< State/Event AGC/MGC indicator enabled. */
 
     double   sampleRate   = 0.0; /**< Hz. */
     double   rfFreq       = 0.0; /**< RF reference frequency, Hz. */
@@ -196,6 +197,7 @@ struct ContextInfo {
     double   refLevel     = 0.0; /**< dBm. */
     double   temperature  = 0.0; /**< Degrees C. */
     uint32_t overRange    = 0;   /**< Over-range sample count. */
+    bool     agcAuto      = false; /**< AGC/MGC indicator: true = AGC. */
 
     SampleFormat format   = FMT_UNKNOWN; /**< Payload format. */
     bool     linkEfficient = false;      /**< Payload format word 1 bit 31. */

@@ -132,6 +132,7 @@ struct RxChannel {
     std::atomic<double> centerFreq{0.0};
     std::atomic<double> bandwidth{0.0};
     std::atomic<double> gain{0.0};
+    std::atomic<int>    agcMode{-1};   /**< -1 unknown, 0 manual, 1 AGC (State/Event). */
     std::atomic<double> refLevel{0.0};
 
     std::atomic<uint64_t> packets{0};
@@ -256,6 +257,15 @@ public:
     double getGain(const int direction, const size_t channel) const override;
     SoapySDR::Range getGainRange(const int direction,
                                  const size_t channel) const override;
+    void setGainMode(const int direction, const size_t channel,
+                     const bool automatic) override;
+    bool getGainMode(const int direction, const size_t channel) const override;
+    void setGain(const int direction, const size_t channel,
+                 const std::string &name, const double value) override;
+    double getGain(const int direction, const size_t channel,
+                   const std::string &name) const override;
+    SoapySDR::Range getGainRange(const int direction, const size_t channel,
+                                 const std::string &name) const override;
 
     /* Frequency */
     void setFrequency(const int direction, const size_t channel,
@@ -379,6 +389,10 @@ private:
     std::unique_ptr<Control::Session> _control;
     bool _controlWarned = false;
     int _controlTimeoutMs = 500;
+    bool controlAvailable() const { return _control && _control->available(); }
+
+    bool            _haveGainRange = false;   /* gain_range= given */
+    SoapySDR::Range _gainRange;
 
     mutable std::mutex _mtx;
 
