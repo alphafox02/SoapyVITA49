@@ -308,7 +308,15 @@ size_t wireToHost(const uint8_t *src, VRT::SampleFormat wire, bool swap,
     case VRT::FMT_CI16:
         switch (host) {
         case HOST_CF32: rxLoop<RdCI16, HostCF32>(src, swap, dst, nItems, swapIq); break;
-        case HOST_CS16: rxLoop<RdCI16, HostCS16>(src, swap, dst, nItems, swapIq); break;
+        case HOST_CS16:
+            for (size_t i = 0; i < nItems; ++i) {
+                const uint8_t *p = src + 2 * i;
+                const uint16_t value = swap ? (uint16_t)((uint16_t)p[1] << 8 | p[0])
+                                            : (uint16_t)((uint16_t)p[0] << 8 | p[1]);
+                const size_t out = swapIq ? (i ^ 1) : i;
+                memcpy(dst + 2 * out, &value, sizeof(value));
+            }
+            break;
         case HOST_CS8:  rxLoop<RdCI16, HostCS8>(src, swap, dst, nItems, swapIq);  break;
         }
         break;

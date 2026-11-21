@@ -586,6 +586,25 @@ static void testCs16PathIsExact()
      * extremes, survives the float intermediate untouched. */
     for (size_t i = 0; i < n * 2; i++)
         CHECK(host[i] == vals[i]);
+
+    // Exercise every 16-bit bit pattern for both wire byte orders and I/Q order.
+    const size_t count = 65536;
+    std::vector<uint8_t> input(count * 2);
+    std::vector<int16_t> output(count);
+    for (int little = 0; little < 2; ++little) {
+        for (size_t i = 0; i < count; ++i) {
+            uint16_t value = static_cast<uint16_t>(i);
+            input[2*i + (little ? 0 : 1)] = static_cast<uint8_t>(value);
+            input[2*i + (little ? 1 : 0)] = static_cast<uint8_t>(value >> 8);
+        }
+        for (int iq = 0; iq < 2; ++iq) {
+            Convert::wireToHost(input.data(), VRT::FMT_CI16, little,
+                                reinterpret_cast<uint8_t *>(output.data()),
+                                Convert::HOST_CS16, count / 2, iq);
+            for (size_t i = 0; i < count; ++i)
+                CHECK(static_cast<uint16_t>(output[iq ? (i ^ 1) : i]) == i);
+        }
+    }
 }
 
 /* Packed 14-bit is receive-only here (the device never transmits it): decode a
